@@ -50,6 +50,8 @@ jobs:
         env:
           IMAGE: ${{ env.REGISTRY }}/${{ github.repository }}:${{ github.ref_name }}
         run: |
+          RELEASE_VER="${GITHUB_REF_NAME#v}"
+          echo "RELEASE_VER=$RELEASE_VER" >> $GITHUB_ENV
           mkdir -p release
           cat > release/docker-compose.yml << EOF
           services:
@@ -65,18 +67,18 @@ jobs:
           EOF
           cp .env.example release/.env.example
           cp README.md release/README.md
-          cd release && zip -r ../release-${{ github.ref_name }}.zip .
+          cd release && zip -r ../${RELEASE_VER}.zip .
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
+          name: ${{ env.RELEASE_VER }}
           body: |
             ## Установка
             1. Скачайте архив и распакуйте.
             2. Скопируйте `.env.example` в `.env` и заполните переменные.
             3. Выполните: `docker compose up -d`
             Образ будет загружен из GitHub Container Registry.
-          files: release-${{ github.ref_name }}.zip
+          files: ${{ env.RELEASE_VER }}.zip
           draft: false
