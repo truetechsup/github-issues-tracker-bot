@@ -19,7 +19,7 @@ def _int(key: str, default: int) -> int:
 
 MIN_POLL_INTERVAL_SECONDS = 60
 
-GITHUB_NAME = (os.environ.get("GITHUB_NAME") or os.environ.get("GITHUB_ORG") or "testit-tms").strip()
+GITHUB_NAME = (os.environ.get("GITHUB_NAME") or os.environ.get("GITHUB_ORG") or "").strip()
 GITHUB_TOKEN = (os.environ.get("GITHUB_TOKEN") or "").strip()
 TELEGRAM_BOT_TOKEN = (os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
 TELEGRAM_CHAT_ID = (os.environ.get("TELEGRAM_CHAT_ID") or "").strip()

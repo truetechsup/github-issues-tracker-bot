@@ -55,7 +55,7 @@ jobs:
           mkdir -p release
           cat > release/docker-compose.yml << EOF
           services:
-            bot:
+            github-issues-tracker-bot:
               image: ${IMAGE}
               restart: unless-stopped
               env_file: .env
@@ -65,7 +65,6 @@ jobs:
           volumes:
             bot_data: {}
           EOF
-          cp .env.example release/.env.example
           cp README.md release/README.md
           cd release && zip -r ../${RELEASE_VER}.zip .
 
@@ -77,7 +76,7 @@ jobs:
           body: |
             ## Установка
             1. Скачайте архив и распакуйте.
-            2. Скопируйте `.env.example` в `.env` и заполните переменные.
+            2. Создайте файл `.env` по примеру из README и заполните переменные.
             3. Выполните: `docker compose up -d`
             Образ будет загружен из GitHub Container Registry.
           files: ${{ env.RELEASE_VER }}.zip

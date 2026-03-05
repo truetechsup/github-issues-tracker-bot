@@ -19,6 +19,7 @@ from bot.github_client import (
     get_issue_comments,
     get_owner_repos,
     get_repo_issues,
+    RateLimitExceeded,
     utc_now_iso,
 )
 from bot.state import load, save
@@ -125,6 +126,11 @@ def main() -> None:
         except KeyboardInterrupt:
             log.info("Stopping")
             break
+        except RateLimitExceeded as e:
+            wait_sec = max(0, e.reset_at - int(time.time()))
+            if wait_sec > 0:
+                log.warning("Waiting %d s until GitHub rate limit resets, then retrying.", wait_sec)
+                time.sleep(wait_sec)
         except Exception as e:
             log.exception("Poll error: %s", e)
         time.sleep(POLL_INTERVAL_SECONDS)

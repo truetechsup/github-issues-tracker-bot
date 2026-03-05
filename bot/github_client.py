@@ -23,11 +23,76 @@ else:
     HEADERS = BASE_HEADERS
 
 
-def _get(url: str, params: dict | None = None) -> list | dict:
+class RateLimitExceeded(Exception):
+    """GitHub API rate limit hit; reset_at is Unix timestamp when limit resets."""
+
+    def __init__(self, reset_at: int):
+        self.reset_at = reset_at
+        super().__init__(reset_at)
+
+
+def _get(url: str, params: dict | None = None, _retried: bool = False) -> list | dict:
     log.debug("GitHub GET %s %s", url, params or {})
     resp = requests.get(url, headers=HEADERS, params=params or {}, timeout=30)
+    if resp.status_code == 403 and _is_rate_limited(resp):
+        if not _retried:
+            _wait_for_rate_limit_reset(resp)
+            return _get(url, params, _retried=True)
+        reset_at = _parse_reset_time(resp)
+        hint = "Add GITHUB_TOKEN for 5000 req/h. " if not GITHUB_TOKEN else ""
+        log.warning(
+            "GitHub rate limit exceeded (%s). %sResets at %s UTC.",
+            "60 req/h without token" if not GITHUB_TOKEN else "5000 req/h with token",
+            hint,
+            _format_reset(reset_at),
+        )
+        raise RateLimitExceeded(reset_at)
     resp.raise_for_status()
     return resp.json()
+
+
+def _parse_reset_time(resp: requests.Response) -> int:
+    raw = resp.headers.get("X-RateLimit-Reset")
+    if raw:
+        try:
+            return int(raw)
+        except ValueError:
+            pass
+    return int(time.time()) + 3600
+
+
+def _format_reset(ts: int) -> str:
+    from datetime import datetime, timezone
+    return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _is_rate_limited(resp: requests.Response) -> bool:
+    try:
+        data = resp.json()
+        return "rate limit" in (data.get("message") or "").lower()
+    except Exception:
+        return "rate limit" in (resp.text or "").lower()
+
+
+def _wait_for_rate_limit_reset(resp: requests.Response) -> None:
+    """Sleep until GitHub rate limit resets, then return."""
+    reset_ts = resp.headers.get("X-RateLimit-Reset")
+    if not reset_ts:
+        reset_ts = str(int(time.time()) + 3600)
+    try:
+        reset_at = int(reset_ts)
+    except ValueError:
+        reset_at = int(time.time()) + 3600
+    wait_sec = max(0, reset_at - int(time.time()))
+    if wait_sec <= 0:
+        return
+    hint = " Add GITHUB_TOKEN for 5000 req/h." if not GITHUB_TOKEN else ""
+    log.warning(
+        "GitHub rate limit exceeded. Waiting %d s until reset.%s",
+        wait_sec,
+        hint,
+    )
+    time.sleep(wait_sec)
 
 
 def check_owner_exists(owner: str) -> bool:
