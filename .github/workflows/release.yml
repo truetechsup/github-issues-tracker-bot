@@ -1,0 +1,82 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ghcr.io/${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ github.ref_name }}
+            ${{ env.IMAGE_NAME }}:latest
+
+  create-release:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare release zip
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ github.repository }}:${{ github.ref_name }}
+        run: |
+          mkdir -p release
+          cat > release/docker-compose.yml << EOF
+          services:
+            bot:
+              image: ${IMAGE}
+              restart: unless-stopped
+              env_file: .env
+              volumes:
+                - bot_data:/data
+
+          volumes:
+            bot_data: {}
+          EOF
+          cp .env.example release/.env.example
+          cp README.md release/README.md
+          cd release && zip -r ../release-${{ github.ref_name }}.zip .
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body: |
+            ## Установка
+            1. Скачайте архив и распакуйте.
+            2. Скопируйте `.env.example` в `.env` и заполните переменные.
+            3. Выполните: `docker compose up -d`
+            Образ будет загружен из GitHub Container Registry.
+          files: release-${{ github.ref_name }}.zip
+          draft: false
