@@ -35,6 +35,21 @@ else:
 STATE_PATH = (os.environ.get("STATE_PATH") or "/data/state.json").strip()
 BODY_PREVIEW_LENGTH = _int("BODY_PREVIEW_LENGTH", 300)
 
+# Comma-separated GitHub logins: comments from these users are not sent to Telegram.
+def _parse_ignore_comment_authors(raw: str | None) -> frozenset[str]:
+    if not raw or not raw.strip():
+        return frozenset()
+    parts = [p.strip().lower() for p in raw.split(",")]
+    return frozenset(p for p in parts if p)
+
+
+IGNORE_COMMENT_AUTHORS = _parse_ignore_comment_authors(
+    os.environ.get("IGNORE_COMMENT_AUTHORS")
+)
+
+# Cap stored dedup keys so state file does not grow without bound.
+SENT_KEYS_MAX = _int("SENT_KEYS_MAX", 10000)
+
 # Log level: DEBUG, INFO, WARNING, ERROR (case-insensitive)
 _LOG_LEVEL_NAMES = {"DEBUG": 10, "INFO": 20, "WARNING": 30, "ERROR": 40}
 _raw_log_level = (os.environ.get("LOG_LEVEL") or "INFO").strip().upper()
@@ -63,5 +78,8 @@ def validate_config() -> list[str]:
 
     if BODY_PREVIEW_LENGTH < 0:
         errors.append("BODY_PREVIEW_LENGTH must be >= 0.")
+
+    if SENT_KEYS_MAX < 100:
+        errors.append("SENT_KEYS_MAX must be >= 100.")
 
     return errors

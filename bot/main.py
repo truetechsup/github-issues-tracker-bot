@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 
 from bot.config import (
     GITHUB_NAME,
+    IGNORE_COMMENT_AUTHORS,
     LOG_LEVEL,
     POLL_INTERVAL_CLAMPED,
     POLL_INTERVAL_SECONDS,
@@ -22,7 +23,7 @@ from bot.github_client import (
     RateLimitExceeded,
     utc_now_iso,
 )
-from bot.state import load, save
+from bot.state import load, maybe_trim_sent_keys_in_place, save
 from bot.telegram_client import send_message
 
 logging.basicConfig(
@@ -34,9 +35,15 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
-def run_once(last_poll_at: str) -> str:
-    """Fetch issues updated since last_poll_at; send only created after it. Return new timestamp."""
+def run_once(last_poll_at: str, sent_keys: list[str]) -> str:
+    """
+    Fetch issues updated since last_poll_at; send only events created after it.
+
+    Uses sent_keys to avoid duplicate Telegram messages after a failed send
+    (same GitHub event is retried until Telegram succeeds).
+    """
     since_dt = datetime.fromisoformat(last_poll_at.replace("Z", "+00:00"))
+    sent_set = set(sent_keys)
     total_issues_sent = 0
     total_comments_sent = 0
     repos_checked = 0
@@ -55,16 +62,61 @@ def run_once(last_poll_at: str) -> str:
             log.debug("Checking repo: %s", full_name)
             for issue in get_repo_issues(owner, name, since_dt):
                 if (issue.get("created_at") or "") >= last_poll_at:
-                    text = format_issue(full_name, issue)
-                    if send_message(text):
-                        issues_sent += 1
-                        log.info("Sent issue %s #%s", full_name, issue["number"])
-                for comment in get_issue_comments(owner, name, issue["number"]):
-                    if (comment.get("created_at") or "") >= last_poll_at:
-                        text = format_comment(full_name, issue, comment)
+                    ikey = f"issue:{full_name}:{issue['number']}"
+                    if ikey not in sent_set:
+                        text = format_issue(full_name, issue)
                         if send_message(text):
-                            comments_sent += 1
-                            log.info("Sent comment %s #%s", full_name, issue["number"])
+                            sent_keys.append(ikey)
+                            sent_set.add(ikey)
+                            issues_sent += 1
+                            log.info("Sent issue %s #%s", full_name, issue["number"])
+                        else:
+                            log.warning(
+                                "Telegram: new issue notification not delivered for %s #%s "
+                                "(will retry on next poll)",
+                                full_name,
+                                issue["number"],
+                            )
+                for comment in get_issue_comments(owner, name, issue["number"]):
+                    if (comment.get("created_at") or "") < last_poll_at:
+                        continue
+                    cid = comment.get("id")
+                    if cid is None:
+                        log.warning(
+                            "Skipping comment without id on %s #%s",
+                            full_name,
+                            issue["number"],
+                        )
+                        continue
+                    ckey = f"comment:{cid}"
+                    if ckey in sent_set:
+                        continue
+                    login = ((comment.get("user") or {}).get("login") or "").strip().lower()
+                    if login in IGNORE_COMMENT_AUTHORS:
+                        sent_keys.append(ckey)
+                        sent_set.add(ckey)
+                        log.debug(
+                            "Skipping Telegram for comment %s on %s #%s (author %s in IGNORE_COMMENT_AUTHORS)",
+                            comment.get("id"),
+                            full_name,
+                            issue["number"],
+                            login or "?",
+                        )
+                        continue
+                    text = format_comment(full_name, issue, comment)
+                    if send_message(text):
+                        sent_keys.append(ckey)
+                        sent_set.add(ckey)
+                        comments_sent += 1
+                        log.info("Sent comment %s #%s", full_name, issue["number"])
+                    else:
+                        log.warning(
+                            "Telegram: comment notification not delivered for %s #%s (comment id=%s; "
+                            "will retry on next poll)",
+                            full_name,
+                            issue["number"],
+                            comment.get("id"),
+                        )
 
             total_issues_sent += issues_sent
             total_comments_sent += comments_sent
@@ -73,6 +125,8 @@ def run_once(last_poll_at: str) -> str:
                 log.info("GitHub request done for %s: no new issues or comments", full_name)
         except Exception as e:
             log.warning("Repo %s: %s", full_name, e)
+
+    maybe_trim_sent_keys_in_place(sent_keys)
 
     if total_issues_sent == 0 and total_comments_sent == 0:
         log.info(
@@ -107,6 +161,8 @@ def main() -> None:
         GITHUB_NAME,
         POLL_INTERVAL_SECONDS,
     )
+    if IGNORE_COMMENT_AUTHORS:
+        log.info("Ignoring comments from GitHub users: %s", ", ".join(sorted(IGNORE_COMMENT_AUTHORS)))
     if POLL_INTERVAL_CLAMPED:
         log.warning(
             "Specified poll interval is invalid (less than minimum). "
@@ -115,14 +171,16 @@ def main() -> None:
 
     while True:
         try:
-            last_poll_at = load(STATE_PATH)
-            if last_poll_at is None:
+            state = load(STATE_PATH)
+            if state is None:
                 last_poll_at = utc_now_iso()
-                save(STATE_PATH, last_poll_at)
+                save(STATE_PATH, last_poll_at, [])
                 log.info("First run: state initialized, no old issues sent")
             else:
-                last_poll_at = run_once(last_poll_at)
-                save(STATE_PATH, last_poll_at)
+                last_poll_at = state["last_poll_at"] or utc_now_iso()
+                sent_keys = list(state["sent_keys"])
+                new_ts = run_once(last_poll_at, sent_keys)
+                save(STATE_PATH, new_ts, sent_keys)
         except KeyboardInterrupt:
             log.info("Stopping")
             break

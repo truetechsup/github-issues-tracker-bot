@@ -16,6 +16,8 @@ GITHUB_NAME=my-org
 # GITHUB_TOKEN=ghp_xxxxxxxxxxxx
 TELEGRAM_BOT_TOKEN=123456:ABC-def...
 TELEGRAM_CHAT_ID=-1001234567890
+# Необязательно: через запятую логины GitHub — их комментарии не уходят в Telegram
+# IGNORE_COMMENT_AUTHORS=bot-user,dependabot
 ```
 
 ## Запуск в Docker
@@ -39,6 +41,8 @@ docker compose up -d
 | `POLL_INTERVAL_SECONDS` | нет | Интервал между опросами GitHub, в секундах. **Минимум 60** | `300` |
 | `STATE_PATH` | нет | Путь к файлу состояния (время последнего опроса) | `/data/state.json` |
 | `BODY_PREVIEW_LENGTH` | нет | Сколько символов текста issue/комментария показывать в уведомлении | `300` |
+| `IGNORE_COMMENT_AUTHORS` | нет | Через запятую логины GitHub (без `@`); комментарии этих пользователей не отправляются в Telegram | — |
+| `SENT_KEYS_MAX` | нет | Максимум ключей успешно доставленных уведомлений в файле состояния (дедуп и повтор при сбое Telegram) | `10000` |
 | `LOG_LEVEL` | нет | Уровень логирования: `DEBUG`, `INFO`, `WARNING`, `ERROR` | `INFO` |
 
 \* Без `GITHUB_TOKEN` бот работает только с публичными репо; лимит 60 req/час — при нескольких репо и issue исчерпывается за 1–2 цикла. При упоре в лимит бот ждёт сброса и пишет в лог рекомендацию добавить токен.
