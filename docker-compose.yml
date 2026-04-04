@@ -1,5 +1,6 @@
 services:
-  github-issues-tracker-bot:
+  bot:
+    container_name: github-issues-tracker-bot
     build: .
     restart: unless-stopped
     env_file: .env

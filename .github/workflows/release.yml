@@ -55,7 +55,8 @@ jobs:
           mkdir -p release
           cat > release/docker-compose.yml << EOF
           services:
-            github-issues-tracker-bot:
+            bot:
+              container_name: github-issues-tracker-bot
               image: ${IMAGE}
               restart: unless-stopped
               env_file: .env
