@@ -73,9 +73,6 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           name: ${{ env.RELEASE_VER }}
-          # Краткий changelog: коммиты и PR с предыдущего релиза (GitHub API).
-          # Блок ниже (Установка) дописывается после автогенерации.
-          generate_release_notes: true
           body: |
             ## Установка
             1. Скачайте архив и распакуйте.
