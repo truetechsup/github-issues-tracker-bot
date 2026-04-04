@@ -60,10 +60,8 @@ jobs:
               restart: unless-stopped
               env_file: .env
               volumes:
-                - bot_data:/data
+                - ./data:/data
 
-          volumes:
-            bot_data: {}
           EOF
           cp README.md release/README.md
           cd release && zip -r ../${RELEASE_VER}.zip .

@@ -4,7 +4,6 @@ services:
     restart: unless-stopped
     env_file: .env
     volumes:
-      - bot_data:/data
+      # Состояние (state.json) на хосте рядом с .env — переживает смену образа без named volume.
+      - ./data:/data
 
-volumes:
-  bot_data: {}
