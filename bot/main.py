@@ -95,8 +95,8 @@ def run_once(last_poll_at: str, sent_keys: list[str]) -> str:
                     if login in IGNORE_COMMENT_AUTHORS:
                         sent_keys.append(ckey)
                         sent_set.add(ckey)
-                        log.debug(
-                            "Skipping Telegram for comment %s on %s #%s (author %s in IGNORE_COMMENT_AUTHORS)",
+                        log.info(
+                            "Skip Telegram: comment %s on %s #%s (author %s in IGNORE_COMMENT_AUTHORS)",
                             comment.get("id"),
                             full_name,
                             issue["number"],
@@ -123,6 +123,11 @@ def run_once(last_poll_at: str, sent_keys: list[str]) -> str:
 
             if issues_sent == 0 and comments_sent == 0:
                 log.info("GitHub request done for %s: no new issues or comments", full_name)
+            # Чекпоинт: при обрыве цикла (лимит API) last_poll_at ещё старый, но sent_keys не теряются.
+            save(STATE_PATH, last_poll_at, sent_keys)
+        except RateLimitExceeded:
+            # Не продвигаем last_poll_at: внешний цикл подождёт сброса лимита и повторит опрос.
+            raise
         except Exception as e:
             log.warning("Repo %s: %s", full_name, e)
 
