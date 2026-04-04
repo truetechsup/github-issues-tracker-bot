@@ -32,9 +32,9 @@ def _escape_tg_html(s: str) -> str:
 def _issue_state_ru(issue: dict) -> str:
     s = (issue.get("state") or "").strip().lower()
     if s == "open":
-        return "Проблема актуальна"
+        return "Открыта"
     if s == "closed":
-        return "Проблема решена"
+        return "Закрыта"
     return _escape_tg_html(s or "неизвестно")
 
 
@@ -50,7 +50,7 @@ def format_issue(repo_full_name: str, issue: dict, preview_len: int | None = Non
     lines: list[str] = [
         "<b>Новая проблема</b>",
         f"<b>Репозиторий</b>: {_escape_tg_html(repo_full_name)}",
-        f"<b>Статус issue</b>: {state_line}",
+        f"<b>Текущий статус</b>: {state_line}",
         f"<b>Заголовок</b>: {title}",
         "",
     ]
