@@ -100,7 +100,6 @@ def create_ticket_from_issue(
         "comment": format_issue_ticket_comment(repo_full_name, issue),
         "requester_email": github_requester_email(author_login),
         "requester_is_robot": True,
-        "comment_from_requester": True,
         "is_external": True,
         "public": True,
         "idempotency_key": idempotency_key,

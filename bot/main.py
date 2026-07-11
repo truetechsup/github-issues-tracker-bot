@@ -161,7 +161,7 @@ def run_once(
                 map_key = issue_map_key(full_name, number) if number is not None else None
                 is_new_issue = (issue.get("created_at") or "") >= last_poll_at
 
-                if swarmica_on and is_new_issue and map_key is not None:
+                if swarmica_on and map_key is not None:
                     create_key = f"swarmica:issue:{map_key}"
                     if create_key not in swarmica_sent_set:
                         ticket_id = _ensure_swarmica_ticket(
