@@ -12,6 +12,9 @@ from bot.config import (
     POLL_INTERVAL_CLAMPED,
     POLL_INTERVAL_SECONDS,
     STATE_PATH,
+    SWARMICA_STATUS_OPEN,
+    SWARMICA_STATUS_PENDING,
+    swarmica_ticket_url,
     validate_config,
 )
 from bot.formatter import format_comment, format_issue
@@ -38,6 +41,15 @@ log = logging.getLogger(__name__)
 
 def _comment_author(comment: dict) -> str:
     return ((comment.get("user") or {}).get("login") or "").strip().lower()
+
+
+def _swarmica_link(issue_tickets: dict[str, int], map_key: str | None) -> str | None:
+    if map_key is None:
+        return None
+    ticket_id = issue_tickets.get(map_key)
+    if ticket_id is None:
+        return None
+    return swarmica_ticket_url(ticket_id)
 
 
 def _ensure_swarmica_ticket(
@@ -177,7 +189,13 @@ def run_once(
                 if is_new_issue and map_key is not None:
                     tg_key = f"tg:issue:{map_key}"
                     if tg_key not in tg_sent_set:
-                        text = format_issue(full_name, issue)
+                        text = format_issue(
+                            full_name,
+                            issue,
+                            swarmica_ticket_url=_swarmica_link(issue_tickets, map_key)
+                            if swarmica_on
+                            else None,
+                        )
                         if send_message(text):
                             sent_keys.append(tg_key)
                             tg_sent_set.add(tg_key)
@@ -217,7 +235,11 @@ def run_once(
                                 swarmica_sent_set,
                             )
                             if ticket_id is not None:
-                                set_pending = author in IGNORE_COMMENT_AUTHORS
+                                comment_status = (
+                                    SWARMICA_STATUS_PENDING
+                                    if author in IGNORE_COMMENT_AUTHORS
+                                    else SWARMICA_STATUS_OPEN
+                                )
                                 try:
                                     swarmica_client.add_issue_comment(
                                         ticket_id,
@@ -225,17 +247,17 @@ def run_once(
                                         issue,
                                         comment,
                                         idempotency_key=swarmica_comment_key,
-                                        set_pending=set_pending,
+                                        status=comment_status,
                                     )
                                     swarmica_sent_keys.append(swarmica_comment_key)
                                     swarmica_sent_set.add(swarmica_comment_key)
                                     comments_swarmica += 1
                                     log.info(
-                                        "Swarmica: sent comment on %s #%s (ticket %s, pending=%s)",
+                                        "Swarmica: sent comment on %s #%s (ticket %s, status=%s)",
                                         full_name,
                                         number,
                                         ticket_id,
-                                        set_pending,
+                                        comment_status,
                                     )
                                 except swarmica_client.SwarmicaError:
                                     log.warning(
@@ -249,7 +271,14 @@ def run_once(
                     if not ignored_for_tg:
                         tg_comment_key = f"tg:comment:{cid}"
                         if tg_comment_key not in tg_sent_set:
-                            text = format_comment(full_name, issue, comment)
+                            text = format_comment(
+                                full_name,
+                                issue,
+                                comment,
+                                swarmica_ticket_url=_swarmica_link(issue_tickets, map_key)
+                                if swarmica_on
+                                else None,
+                            )
                             if send_message(text):
                                 sent_keys.append(tg_comment_key)
                                 tg_sent_set.add(tg_comment_key)

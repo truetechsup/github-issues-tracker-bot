@@ -26,9 +26,21 @@ TELEGRAM_CHAT_ID = (os.environ.get("TELEGRAM_CHAT_ID") or "").strip()
 
 SWARMICA_API_URL = (os.environ.get("SWARMICA_API_URL") or "").strip().rstrip("/")
 SWARMICA_API_TOKEN = (os.environ.get("SWARMICA_API_TOKEN") or "").strip()
-# Swarmica API status codes: PENDING = waiting for client, SOLVED = solution provided.
+# Optional: robot requester email if the instance requires it (not used for outbound mail).
+SWARMICA_REQUESTER_EMAIL = (os.environ.get("SWARMICA_REQUESTER_EMAIL") or "").strip()
+# Optional: agent UI link template; {id} is replaced with Swarmica ticket id.
+SWARMICA_TICKET_URL = (os.environ.get("SWARMICA_TICKET_URL") or "").strip()
+# Swarmica API status codes: OPEN = client replied, PENDING = waiting for client, SOLVED = closed.
+SWARMICA_STATUS_OPEN = (os.environ.get("SWARMICA_STATUS_OPEN") or "OPEN").strip().upper()
 SWARMICA_STATUS_PENDING = (os.environ.get("SWARMICA_STATUS_PENDING") or "PENDING").strip().upper()
 SWARMICA_STATUS_SOLVED = (os.environ.get("SWARMICA_STATUS_SOLVED") or "SOLVED").strip().upper()
+
+
+def swarmica_ticket_url(ticket_id: int) -> str:
+    """Public URL of a Swarmica ticket for links in Telegram."""
+    if SWARMICA_TICKET_URL:
+        return SWARMICA_TICKET_URL.replace("{id}", str(ticket_id))
+    return f"{SWARMICA_API_URL}/tickets/{ticket_id}"
 
 _raw_interval = _int("POLL_INTERVAL_SECONDS", 300)
 if _raw_interval < MIN_POLL_INTERVAL_SECONDS:
@@ -94,5 +106,7 @@ def validate_config() -> list[str]:
             errors.append("SWARMICA_API_URL is empty but SWARMICA_API_TOKEN is set.")
         if not SWARMICA_API_TOKEN:
             errors.append("SWARMICA_API_TOKEN is empty but SWARMICA_API_URL is set.")
+        if SWARMICA_REQUESTER_EMAIL and "@" not in SWARMICA_REQUESTER_EMAIL:
+            errors.append("SWARMICA_REQUESTER_EMAIL must look like an email address.")
 
     return errors

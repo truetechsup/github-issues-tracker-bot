@@ -9,6 +9,7 @@ import requests
 from bot.config import (
     SWARMICA_API_TOKEN,
     SWARMICA_API_URL,
+    SWARMICA_REQUESTER_EMAIL,
     SWARMICA_STATUS_PENDING,
     SWARMICA_STATUS_SOLVED,
 )
@@ -16,7 +17,6 @@ from bot.swarmica_formatter import (
     format_comment_body,
     format_issue_ticket_comment,
     format_issue_ticket_subject,
-    github_requester_email,
 )
 
 log = logging.getLogger(__name__)
@@ -94,16 +94,16 @@ def create_ticket_from_issue(
     idempotency_key: str,
 ) -> int:
     """Create a Swarmica ticket for a GitHub issue. Returns ticket id."""
-    author_login = ((issue.get("user") or {}).get("login") or "unknown").strip()
     payload: dict[str, Any] = {
-        "subject": format_issue_ticket_subject(repo_full_name, issue),
+        "subject": format_issue_ticket_subject(issue),
         "comment": format_issue_ticket_comment(repo_full_name, issue),
-        "requester_email": github_requester_email(author_login),
-        "requester_is_robot": True,
         "is_external": True,
         "public": True,
         "idempotency_key": idempotency_key,
     }
+    if SWARMICA_REQUESTER_EMAIL:
+        payload["requester_email"] = SWARMICA_REQUESTER_EMAIL
+        payload["requester_is_robot"] = True
     data = _request("POST", "/api/tickets/", payload)
     ticket_id = _ticket_id_from_response(data)
     if ticket_id is None:
@@ -117,18 +117,18 @@ def add_comment(
     body_html: str,
     *,
     idempotency_key: str,
-    set_pending: bool = False,
+    status: str | None = None,
 ) -> None:
-    """Add a comment; optionally move ticket to pending (waiting for client)."""
-    if set_pending:
+    """Add a comment; optionally set ticket status (OPEN, PENDING, etc.)."""
+    if status:
         payload = {
             "comment": body_html,
-            "status": SWARMICA_STATUS_PENDING,
+            "status": status,
             "public": True,
             "idempotency_key": idempotency_key,
         }
         _request("PATCH", f"/api/tickets/{ticket_id}/", payload)
-        log.info("Swarmica: comment + status %s on ticket %s", SWARMICA_STATUS_PENDING, ticket_id)
+        log.info("Swarmica: comment + status %s on ticket %s", status, ticket_id)
         return
 
     payload = {
@@ -147,14 +147,14 @@ def add_issue_comment(
     comment: dict,
     *,
     idempotency_key: str,
-    set_pending: bool = False,
+    status: str,
 ) -> None:
     body_html = format_comment_body(repo_full_name, issue, comment)
     add_comment(
         ticket_id,
         body_html,
         idempotency_key=idempotency_key,
-        set_pending=set_pending,
+        status=status,
     )
 
 

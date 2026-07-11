@@ -38,7 +38,13 @@ def _issue_state_ru(issue: dict) -> str:
     return _escape_tg_html(s or "неизвестно")
 
 
-def format_issue(repo_full_name: str, issue: dict, preview_len: int | None = None) -> str:
+def format_issue(
+    repo_full_name: str,
+    issue: dict,
+    preview_len: int | None = None,
+    *,
+    swarmica_ticket_url: str | None = None,
+) -> str:
     """One notification block for a new issue (HTML parse mode)."""
     preview_len = preview_len or BODY_PREVIEW_LENGTH
     title = _escape_tg_html((issue.get("title") or "").strip() or "(no title)")
@@ -58,10 +64,19 @@ def format_issue(repo_full_name: str, issue: dict, preview_len: int | None = Non
         lines.append(f"<pre>{_escape_tg_html(body)}</pre>")
         lines.append("")
     lines.append(_escape_tg_html(url))
+    if swarmica_ticket_url:
+        lines.append(_escape_tg_html(swarmica_ticket_url))
     return "\n".join(lines).strip()
 
 
-def format_comment(repo_full_name: str, issue: dict, comment: dict, preview_len: int | None = None) -> str:
+def format_comment(
+    repo_full_name: str,
+    issue: dict,
+    comment: dict,
+    preview_len: int | None = None,
+    *,
+    swarmica_ticket_url: str | None = None,
+) -> str:
     """One notification block for a new comment (HTML parse mode)."""
     preview_len = preview_len or BODY_PREVIEW_LENGTH
     issue_title = _escape_tg_html((issue.get("title") or "").strip() or "(no title)")
@@ -83,4 +98,6 @@ def format_comment(repo_full_name: str, issue: dict, comment: dict, preview_len:
         lines.append(f"<pre>{_escape_tg_html(body)}</pre>")
         lines.append("")
     lines.append(_escape_tg_html(url))
+    if swarmica_ticket_url:
+        lines.append(_escape_tg_html(swarmica_ticket_url))
     return "\n".join(lines).strip()
