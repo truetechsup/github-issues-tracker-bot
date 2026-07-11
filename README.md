@@ -1,6 +1,10 @@
-# GitHub Issues → Telegram bot
+# GitHub Issues → Telegram bot + Swarmica
 
-Отслеживает новые issues и комментарии в репозиториях организации GitHub и шлёт уведомления в один чат Telegram. Старые issues не подгружаются — уведомления только о том, что появилось после старта контейнера.
+Отслеживает новые issues и комментарии в репозиториях организации GitHub и:
+- шлёт уведомления в чат Telegram;
+- создаёт заявки в Swarmica (helpdesk) через API.
+
+Старые issues не подгружаются — уведомления только о том, что появилось после старта контейнера.
 
 ## Настройка
 
@@ -16,7 +20,11 @@ GITHUB_NAME=my-org
 # GITHUB_TOKEN=ghp_xxxxxxxxxxxx
 TELEGRAM_BOT_TOKEN=123456:ABC-def...
 TELEGRAM_CHAT_ID=-1001234567890
-# Необязательно: через запятую логины GitHub — их комментарии не уходят в Telegram
+# Swarmica (опционально; если не заданы оба — интеграция отключена)
+# SWARMICA_API_URL=https://your-instance.swarmica.ru
+# SWARMICA_API_TOKEN=your_api_token
+# Необязательно: через запятую логины GitHub — их комментарии не уходят в Telegram,
+# но в Swarmica уходят; для таких авторов статус заявки → PENDING (ожидает ответа клиента)
 # IGNORE_COMMENT_AUTHORS=bot-user,dependabot
 ```
 
@@ -41,8 +49,23 @@ docker compose up -d
 | `POLL_INTERVAL_SECONDS` | нет | Интервал между опросами GitHub, в секундах. **Минимум 60** | `300` |
 | `STATE_PATH` | нет | Путь к файлу состояния (время последнего опроса) | `/data/state.json` |
 | `BODY_PREVIEW_LENGTH` | нет | Сколько символов текста issue/комментария показывать в уведомлении | `300` |
-| `IGNORE_COMMENT_AUTHORS` | нет | Через запятую логины GitHub (без `@`); комментарии этих пользователей не отправляются в Telegram | — |
+| `IGNORE_COMMENT_AUTHORS` | нет | Через запятую логины GitHub (без `@`); комментарии этих пользователей **не** отправляются в Telegram, но **отправляются** в Swarmica; для них статус заявки меняется на «ожидает ответа клиента» (`PENDING`) | — |
+| `SWARMICA_API_URL` | нет* | URL вашей инсталляции Swarmica (без завершающего `/`) | — |
+| `SWARMICA_API_TOKEN` | нет* | Постоянный API-токен из Swarmica: Настройки → API и интеграции ([документация](https://support.swarmica.com/article/ru/941-sozdanie-tokena-dlya-podklyucheniya-po-api.html)) | — |
+| `SWARMICA_STATUS_PENDING` | нет | Код статуса Swarmica при ответе сотрудника (ожидает ответа клиента) | `PENDING` |
+| `SWARMICA_STATUS_SOLVED` | нет | Код статуса Swarmica при закрытии GitHub issue (решение предоставлено) | `SOLVED` |
 | `SENT_KEYS_MAX` | нет | Максимум ключей успешно доставленных уведомлений в файле состояния (дедуп и повтор при сбое Telegram) | `10000` |
 | `LOG_LEVEL` | нет | Уровень логирования: `DEBUG`, `INFO`, `WARNING`, `ERROR` | `INFO` |
 
 \* Без `GITHUB_TOKEN` бот работает только с публичными репо; лимит 60 req/час — при нескольких репо и issue исчерпывается за 1–2 цикла. При упоре в лимит бот ждёт сброса и пишет в лог рекомендацию добавить токен.
+
+\* Swarmica включается только если заданы **оба** `SWARMICA_API_URL` и `SWARMICA_API_TOKEN`. В `state.json` хранится связка `org/repo#issue_number` → id заявки в Swarmica.
+
+## Поведение Swarmica
+
+- **Новый GitHub issue** → новая заявка в Swarmica (один issue = одна заявка).
+- **Новый комментарий** → комментарий в существующую заявку (новая заявка не создаётся).
+- **Комментарий от пользователя из `IGNORE_COMMENT_AUTHORS`** → комментарий в Swarmica + статус заявки `PENDING`.
+- **GitHub issue закрыт** → статус заявки `SOLVED`.
+
+API Swarmica: [документация](https://support.swarmica.ru/api/schema/doc/). Авторизация: заголовок `Authorization: Token <токен>`.

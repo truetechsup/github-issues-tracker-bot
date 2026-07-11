@@ -24,6 +24,12 @@ GITHUB_TOKEN = (os.environ.get("GITHUB_TOKEN") or "").strip()
 TELEGRAM_BOT_TOKEN = (os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
 TELEGRAM_CHAT_ID = (os.environ.get("TELEGRAM_CHAT_ID") or "").strip()
 
+SWARMICA_API_URL = (os.environ.get("SWARMICA_API_URL") or "").strip().rstrip("/")
+SWARMICA_API_TOKEN = (os.environ.get("SWARMICA_API_TOKEN") or "").strip()
+# Swarmica API status codes: PENDING = waiting for client, SOLVED = solution provided.
+SWARMICA_STATUS_PENDING = (os.environ.get("SWARMICA_STATUS_PENDING") or "PENDING").strip().upper()
+SWARMICA_STATUS_SOLVED = (os.environ.get("SWARMICA_STATUS_SOLVED") or "SOLVED").strip().upper()
+
 _raw_interval = _int("POLL_INTERVAL_SECONDS", 300)
 if _raw_interval < MIN_POLL_INTERVAL_SECONDS:
     POLL_INTERVAL_SECONDS = MIN_POLL_INTERVAL_SECONDS
@@ -81,5 +87,12 @@ def validate_config() -> list[str]:
 
     if SENT_KEYS_MAX < 100:
         errors.append("SENT_KEYS_MAX must be >= 100.")
+
+    swarmica_partial = bool(SWARMICA_API_URL or SWARMICA_API_TOKEN)
+    if swarmica_partial:
+        if not SWARMICA_API_URL:
+            errors.append("SWARMICA_API_URL is empty but SWARMICA_API_TOKEN is set.")
+        if not SWARMICA_API_TOKEN:
+            errors.append("SWARMICA_API_TOKEN is empty but SWARMICA_API_URL is set.")
 
     return errors

@@ -1,4 +1,4 @@
-"""Persistent state: last poll time and keys of successfully sent notifications."""
+"""Persistent state: poll checkpoint, Telegram/Swarmica dedup, issue→ticket mapping."""
 
 import json
 import os
@@ -20,11 +20,40 @@ def _trim_keys(keys: list[str]) -> list[str]:
     return keys[-keep:]
 
 
+def _normalize_issue_tickets(raw: Any) -> dict[str, int]:
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, int] = {}
+    for key, value in raw.items():
+        if key is None:
+            continue
+        try:
+            out[str(key)] = int(value)
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _normalize_str_list(raw: Any) -> list[str]:
+    if not isinstance(raw, list):
+        return []
+    return [str(item) for item in raw if item is not None]
+
+
+def issue_map_key(repo_full_name: str, issue_number: int) -> str:
+    return f"{repo_full_name}#{issue_number}"
+
+
 def load(path: str) -> dict[str, Any] | None:
     """
     Load state. Returns None if first run (no file).
 
-    Keys: last_poll_at (str | None), sent_keys (list[str]).
+    Keys:
+      last_poll_at (str | None)
+      sent_keys (list[str]) — Telegram dedup
+      swarmica_sent_keys (list[str]) — Swarmica dedup
+      issue_tickets (dict[str, int]) — GitHub issue key → Swarmica ticket id
+      issue_closed_synced (list[str]) — issues already marked solved in Swarmica
     """
     if not os.path.isfile(path):
         return None
@@ -33,23 +62,49 @@ def load(path: str) -> dict[str, Any] | None:
             data = json.load(f)
     except (json.JSONDecodeError, TypeError):
         return None
+
     last_poll_at = data.get("last_poll_at")
     if last_poll_at is not None and not isinstance(last_poll_at, str):
         last_poll_at = None
-    raw_keys = data.get("sent_keys", [])
-    if isinstance(raw_keys, list):
-        sent_keys = [str(k) for k in raw_keys if k is not None]
-    else:
-        sent_keys = []
-    return {"last_poll_at": last_poll_at, "sent_keys": _trim_keys(sent_keys)}
+
+    sent_keys = _normalize_str_list(data.get("sent_keys", []))
+    swarmica_sent_keys = _normalize_str_list(data.get("swarmica_sent_keys", []))
+    issue_closed_synced = _normalize_str_list(data.get("issue_closed_synced", []))
+    issue_tickets = _normalize_issue_tickets(data.get("issue_tickets", {}))
+
+    return {
+        "last_poll_at": last_poll_at,
+        "sent_keys": _trim_keys(sent_keys),
+        "swarmica_sent_keys": _trim_keys(swarmica_sent_keys),
+        "issue_tickets": issue_tickets,
+        "issue_closed_synced": _trim_keys(issue_closed_synced),
+    }
 
 
-def save(path: str, last_poll_at: str, sent_keys: list[str]) -> None:
-    """Persist last_poll_at and successfully delivered notification keys."""
+def save(
+    path: str,
+    last_poll_at: str,
+    sent_keys: list[str],
+    *,
+    swarmica_sent_keys: list[str] | None = None,
+    issue_tickets: dict[str, int] | None = None,
+    issue_closed_synced: list[str] | None = None,
+) -> None:
+    """Persist poll checkpoint and delivery/mapping state."""
     _ensure_dir(path)
-    keys = _trim_keys(sent_keys)
+    payload: dict[str, Any] = {
+        "last_poll_at": last_poll_at,
+        "sent_keys": _trim_keys(sent_keys),
+    }
+    if swarmica_sent_keys is not None:
+        payload["swarmica_sent_keys"] = _trim_keys(swarmica_sent_keys)
+    if issue_tickets is not None:
+        payload["issue_tickets"] = issue_tickets
+    if issue_closed_synced is not None:
+        payload["issue_closed_synced"] = _trim_keys(issue_closed_synced)
+
     with open(path, "w", encoding="utf-8") as f:
-        json.dump({"last_poll_at": last_poll_at, "sent_keys": keys}, f, indent=0)
+        json.dump(payload, f, indent=0)
 
 
 def maybe_trim_sent_keys_in_place(keys: list[str]) -> None:
