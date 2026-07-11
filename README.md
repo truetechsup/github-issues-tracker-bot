@@ -24,6 +24,7 @@ TELEGRAM_CHAT_ID=-1001234567890
 # SWARMICA_API_URL=https://your-instance.swarmica.ru
 # SWARMICA_API_TOKEN=your_api_token
 # SWARMICA_REQUESTER_EMAIL=github-issues@testit.software
+# SWARMICA_ASSIGNEE_EMAIL=agent@company.com
 # SWARMICA_TICKET_URL=https://help.testit.software/tickets/{id}
 # Необязательно: через запятую логины GitHub — их комментарии не уходят в Telegram,
 # но в Swarmica уходят; для таких авторов статус заявки → PENDING (ожидает ответа клиента)
@@ -55,6 +56,7 @@ docker compose up -d
 | `SWARMICA_API_URL` | нет* | URL вашей инсталляции Swarmica (без завершающего `/`) | — |
 | `SWARMICA_API_TOKEN` | нет* | Постоянный API-токен из Swarmica: Настройки → API и интеграции ([документация](https://support.swarmica.com/article/ru/941-sozdanie-tokena-dlya-podklyucheniya-po-api.html)) | — |
 | `SWARMICA_REQUESTER_EMAIL` | нет | Email робота-заявителя в Swarmica, если инстанс требует поле получателя (письма не отправляются) | — |
+| `SWARMICA_ASSIGNEE_EMAIL` | нет | Email сотрудника Swarmica — назначается ответственным при создании заявки; если не задан, ответственный выбирает Swarmica | — |
 | `SWARMICA_TICKET_URL` | нет | Шаблон ссылки на заявку в интерфейсе Swarmica; `{id}` заменяется на id тикета | `{SWARMICA_API_URL}/tickets/{id}` |
 | `SWARMICA_STATUS_OPEN` | нет | Код статуса Swarmica при комментарии клиента на GitHub (заявка снова открыта) | `OPEN` |
 | `SWARMICA_STATUS_PENDING` | нет | Код статуса Swarmica при ответе сотрудника (ожидает ответа клиента) | `PENDING` |

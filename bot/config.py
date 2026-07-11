@@ -28,6 +28,8 @@ SWARMICA_API_URL = (os.environ.get("SWARMICA_API_URL") or "").strip().rstrip("/"
 SWARMICA_API_TOKEN = (os.environ.get("SWARMICA_API_TOKEN") or "").strip()
 # Optional: robot requester email if the instance requires it (not used for outbound mail).
 SWARMICA_REQUESTER_EMAIL = (os.environ.get("SWARMICA_REQUESTER_EMAIL") or "").strip()
+# Optional: employee email to set as ticket assignee on create (Swarmica user uid).
+SWARMICA_ASSIGNEE_EMAIL = (os.environ.get("SWARMICA_ASSIGNEE_EMAIL") or "").strip()
 # Optional: agent UI link template; {id} is replaced with Swarmica ticket id.
 SWARMICA_TICKET_URL = (os.environ.get("SWARMICA_TICKET_URL") or "").strip()
 # Swarmica API status codes: OPEN = client replied, PENDING = waiting for client, SOLVED = closed.
@@ -108,5 +110,7 @@ def validate_config() -> list[str]:
             errors.append("SWARMICA_API_TOKEN is empty but SWARMICA_API_URL is set.")
         if SWARMICA_REQUESTER_EMAIL and "@" not in SWARMICA_REQUESTER_EMAIL:
             errors.append("SWARMICA_REQUESTER_EMAIL must look like an email address.")
+        if SWARMICA_ASSIGNEE_EMAIL and "@" not in SWARMICA_ASSIGNEE_EMAIL:
+            errors.append("SWARMICA_ASSIGNEE_EMAIL must look like an email address.")
 
     return errors

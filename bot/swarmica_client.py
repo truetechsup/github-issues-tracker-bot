@@ -9,6 +9,7 @@ import requests
 from bot.config import (
     SWARMICA_API_TOKEN,
     SWARMICA_API_URL,
+    SWARMICA_ASSIGNEE_EMAIL,
     SWARMICA_REQUESTER_EMAIL,
     SWARMICA_STATUS_PENDING,
     SWARMICA_STATUS_SOLVED,
@@ -87,6 +88,72 @@ def _ticket_id_from_response(data: Any) -> int | None:
     return None
 
 
+_assignee_lookup_done = False
+_assignee_uid: str | None = None
+
+
+def _lookup_user_uid_by_email(email: str) -> str | None:
+    url = _api_url("/api/users/")
+    try:
+        resp = requests.get(
+            url,
+            headers=_headers(),
+            params={"email": email, "limit": 1},
+            timeout=30,
+        )
+    except requests.RequestException as e:
+        log.warning("Swarmica: assignee lookup failed for %s: %s", email, e)
+        return None
+    if resp.status_code >= 400:
+        log.warning(
+            "Swarmica: assignee lookup for %s returned %s: %s",
+            email,
+            resp.status_code,
+            (resp.text or "")[:400],
+        )
+        return None
+    try:
+        payload = resp.json()
+    except ValueError:
+        log.warning("Swarmica: assignee lookup for %s returned invalid JSON", email)
+        return None
+    results = payload.get("results") if isinstance(payload, dict) else None
+    if not results:
+        return None
+    first = results[0]
+    if not isinstance(first, dict):
+        return None
+    uid = first.get("uid")
+    return uid if isinstance(uid, str) and uid.strip() else None
+
+
+def get_assignee_uid() -> str | None:
+    """Resolve SWARMICA_ASSIGNEE_EMAIL to Swarmica user uid (cached)."""
+    global _assignee_lookup_done, _assignee_uid
+    if not SWARMICA_ASSIGNEE_EMAIL:
+        return None
+    if not _assignee_lookup_done:
+        _assignee_uid = _lookup_user_uid_by_email(SWARMICA_ASSIGNEE_EMAIL)
+        _assignee_lookup_done = True
+        if _assignee_uid:
+            log.info(
+                "Swarmica: assignee %s resolved to uid %s",
+                SWARMICA_ASSIGNEE_EMAIL,
+                _assignee_uid,
+            )
+        else:
+            log.warning(
+                "Swarmica: assignee email %s not found; tickets will use default assignment",
+                SWARMICA_ASSIGNEE_EMAIL,
+            )
+    return _assignee_uid
+
+
+def warm_assignee_cache() -> None:
+    """Look up assignee uid at startup so misconfiguration shows up early in logs."""
+    get_assignee_uid()
+
+
 def create_ticket_from_issue(
     repo_full_name: str,
     issue: dict,
@@ -104,6 +171,9 @@ def create_ticket_from_issue(
     if SWARMICA_REQUESTER_EMAIL:
         payload["requester_email"] = SWARMICA_REQUESTER_EMAIL
         payload["requester_is_robot"] = True
+    assignee_uid = get_assignee_uid()
+    if assignee_uid:
+        payload["assignee"] = assignee_uid
     data = _request("POST", "/api/tickets/", payload)
     ticket_id = _ticket_id_from_response(data)
     if ticket_id is None:

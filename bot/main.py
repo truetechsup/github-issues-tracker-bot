@@ -391,6 +391,7 @@ def main() -> None:
         )
     if swarmica_client.is_enabled():
         log.info("Swarmica integration enabled")
+        swarmica_client.warm_assignee_cache()
     else:
         log.info("Swarmica integration disabled (set SWARMICA_API_URL and SWARMICA_API_TOKEN)")
     if POLL_INTERVAL_CLAMPED:
