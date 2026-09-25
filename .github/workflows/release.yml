@@ -65,6 +65,7 @@ jobs:
 
           EOF
           cp README.md release/README.md
+          cp .env.example release/.env.example
           cd release && zip -r ../${RELEASE_VER}.zip .
 
       - name: Create GitHub Release
@@ -75,7 +76,7 @@ jobs:
           body: |
             ## Установка
             1. Скачайте архив и распакуйте.
-            2. Создайте файл `.env` по примеру из README и заполните переменные.
+            2. Скопируйте `.env.example` в `.env` (`cp .env.example .env`) и заполните переменные — описание каждой есть в самом файле.
             3. Выполните: `docker compose up -d`
             Образ будет загружен из GitHub Container Registry.
           files: ${{ env.RELEASE_VER }}.zip

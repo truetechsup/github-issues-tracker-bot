@@ -50,7 +50,7 @@ def load(path: str) -> dict[str, Any] | None:
 
     Keys:
       last_poll_at (str | None)
-      sent_keys (list[str]) — Telegram dedup
+      sent_keys (list[str]) — Telegram dedup (kept while Telegram is disabled)
       swarmica_sent_keys (list[str]) — Swarmica dedup
       issue_tickets (dict[str, int]) — GitHub issue key → Swarmica ticket id
       issue_closed_synced (list[str]) — issues already marked solved in Swarmica

@@ -189,7 +189,12 @@ def add_comment(
     idempotency_key: str,
     status: str | None = None,
 ) -> None:
-    """Add a comment; optionally set ticket status (OPEN, PENDING, etc.)."""
+    """
+    Add a comment; optionally set ticket status (OPEN, PENDING, SOLVED, etc.).
+
+    Swarmica may change the status itself after a new comment (e.g. reopen the ticket),
+    so the status is forced once more with a separate PATCH after the comment is added.
+    """
     if status:
         payload = {
             "comment": body_html,
@@ -198,6 +203,7 @@ def add_comment(
             "idempotency_key": idempotency_key,
         }
         _request("PATCH", f"/api/tickets/{ticket_id}/", payload)
+        set_ticket_status(ticket_id, status, idempotency_key=f"{idempotency_key}:status")
         log.info("Swarmica: comment + status %s on ticket %s", status, ticket_id)
         return
 
@@ -228,10 +234,14 @@ def add_issue_comment(
     )
 
 
-def set_ticket_solved(ticket_id: int, *, idempotency_key: str) -> None:
+def set_ticket_status(ticket_id: int, status: str, *, idempotency_key: str) -> None:
     payload = {
-        "status": SWARMICA_STATUS_SOLVED,
+        "status": status,
         "idempotency_key": idempotency_key,
     }
     _request("PATCH", f"/api/tickets/{ticket_id}/", payload)
-    log.info("Swarmica: ticket %s set to %s", ticket_id, SWARMICA_STATUS_SOLVED)
+    log.info("Swarmica: ticket %s set to %s", ticket_id, status)
+
+
+def set_ticket_solved(ticket_id: int, *, idempotency_key: str) -> None:
+    set_ticket_status(ticket_id, SWARMICA_STATUS_SOLVED, idempotency_key=idempotency_key)

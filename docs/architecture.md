@@ -1,5 +1,7 @@
 # Архитектура бота
 
+> Telegram-уведомления отключены: пакет `bot/telegram/` (client, formatter, notifier, config) сохранён, но не импортируется из `main.py`. Точки подключения оставлены в `main.py` закомментированными (`# Telegram (disabled)`).
+
 ## Схема
 
 ```mermaid
@@ -7,8 +9,6 @@ flowchart TB
     subgraph env["Конфиг (переменные окружения)"]
         GITHUB_NAME
         GITHUB_TOKEN
-        TELEGRAM_BOT_TOKEN
-        TELEGRAM_CHAT_ID
         SWARMICA_API_URL
         SWARMICA_API_TOKEN
         POLL_INTERVAL
@@ -34,15 +34,6 @@ flowchart TB
         state_file["/data/state.json\nlast_poll_at, sent_keys,\nissue_tickets, ..."]
     end
 
-    subgraph tg_fmt["formatter.py — Telegram HTML"]
-        format_issue["format_issue()"]
-        format_comment["format_comment()"]
-    end
-
-    subgraph telegram["telegram_client.py — канал Telegram"]
-        send["send_message()"]
-    end
-
     subgraph swarm_fmt["swarmica_formatter.py — Swarmica HTML"]
         swarm_issue["format_issue_ticket_*()"]
         swarm_comment["format_comment_body()"]
@@ -51,22 +42,17 @@ flowchart TB
     subgraph swarmica["swarmica_client.py — заявки Swarmica"]
         create_ticket["create_ticket_from_issue()"]
         add_comment["add_issue_comment()"]
-        set_solved["set_ticket_solved()"]
+        set_solved["set_ticket_solved() / set_ticket_status()"]
     end
 
     env --> main
     env --> github
-    env --> telegram
     env --> swarmica
 
     main --> load_state
     run_once --> get_repos
     get_repos --> get_issues
     get_issues --> get_comments
-    run_once --> format_issue
-    run_once --> format_comment
-    format_issue --> send
-    format_comment --> send
     run_once --> swarm_issue
     run_once --> swarm_comment
     swarm_issue --> create_ticket
@@ -76,7 +62,6 @@ flowchart TB
     run_once --> state_file
 
     github --> api["GitHub API\n(REST)"]
-    send --> tg["Telegram API\n(sendMessage)"]
     create_ticket --> sw["Swarmica API\n(/api/tickets/)"]
     add_comment --> sw
     set_solved --> sw
@@ -89,13 +74,11 @@ flowchart TB
    - Запрос списка репозиториев владельца (GitHub).
    - Для каждого репо — запрос issues, обновлённых после `last_poll_at`.
    - Для каждого issue — запрос комментариев.
-   - **Новый issue** (`created_at ≥ last_poll_at`):
-     - Swarmica: создать заявку, сохранить `org/repo#N → ticket_id`.
-     - Telegram: отправить уведомление.
-   - **Новый комментарий**:
-     - Swarmica: добавить в заявку (создать заявку, если ещё нет); для авторов из `IGNORE_COMMENT_AUTHORS` — статус `PENDING`.
-     - Telegram: отправить, кроме авторов из `IGNORE_COMMENT_AUTHORS`.
-   - **Issue закрыт** (`state == closed`): Swarmica — статус `SOLVED` (один раз).
+   - **Новый issue** (автор не из `IGNORE_COMMENT_AUTHORS`): создать заявку (заголовок и полный текст issue), сохранить `org/repo#N → ticket_id`.
+   - **Новый комментарий** (полный текст + ссылка на комментарий):
+     - клиент — добавить в заявку (создать, если ещё нет), статус `OPEN`;
+     - автор из `IGNORE_COMMENT_AUTHORS` — добавить в существующую заявку, затем отдельным PATCH статус `PENDING` (для закрытого issue — `SOLVED`).
+   - **Issue закрыт** (`state == closed`): статус `SOLVED` (один раз); не закрывается, если клиент написал после закрытия.
    - Запись нового `last_poll_at` и чекпоинтов в `state.json`.
 3. **Ожидание** — `sleep(POLL_INTERVAL)`, затем повтор цикла.
 
@@ -103,17 +86,15 @@ flowchart TB
 
 | Модуль | Роль |
 |--------|------|
-| `main.py` | Цикл опроса, оркестрация Telegram и Swarmica, сохранение состояния |
+| `main.py` | Цикл опроса, синхронизация со Swarmica, сохранение состояния |
 | `github_client.py` | Запросы к GitHub API (repos, issues, comments), обработка rate limit |
-| `telegram_client.py` | Отправка уведомлений в Telegram-канал |
-| `formatter.py` | Текст уведомлений для Telegram (HTML) |
 | `swarmica_client.py` | Создание заявок, комментариев и смена статусов в Swarmica API |
 | `swarmica_formatter.py` | Текст заявок/комментариев для Swarmica (HTML) |
 | `state.py` | `last_poll_at`, дедуп-ключи, маппинг issue → ticket |
 | `config.py` | Чтение и валидация переменных окружения |
+| `telegram/` | **Отключено.** Уведомления в Telegram: `client.py`, `formatter.py`, `notifier.py`, `config.py` |
 
 ## Внешние зависимости
 
 - **GitHub API** — репозитории, issues, комментарии (REST, пагинация).
-- **Telegram Bot API** — `sendMessage` в заданный чат.
 - **Swarmica API** — `POST /api/tickets/`, `POST /api/tickets/{id}/comments/`, `PATCH /api/tickets/{id}/` ([схема](https://support.swarmica.ru/api/schema/doc/)).

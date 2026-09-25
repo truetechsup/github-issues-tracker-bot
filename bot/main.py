@@ -1,4 +1,7 @@
-"""Main loop: poll GitHub, notify Telegram channel and Swarmica helpdesk."""
+"""Main loop: poll GitHub, sync issues/comments to Swarmica helpdesk.
+
+Telegram notifications are disabled; see bot/telegram/__init__.py.
+"""
 
 import logging
 import sys
@@ -14,10 +17,10 @@ from bot.config import (
     STATE_PATH,
     SWARMICA_STATUS_OPEN,
     SWARMICA_STATUS_PENDING,
+    SWARMICA_STATUS_SOLVED,
     swarmica_ticket_url,
     validate_config,
 )
-from bot.formatter import format_comment, format_issue
 from bot.github_client import (
     check_owner_exists,
     get_issue_comments,
@@ -28,7 +31,7 @@ from bot.github_client import (
 )
 from bot import swarmica_client
 from bot.state import issue_map_key, load, maybe_trim_sent_keys_in_place, save
-from bot.telegram_client import send_message
+# Telegram (disabled): from bot.telegram.notifier import TelegramNotifier
 
 logging.basicConfig(
     level=LOG_LEVEL,
@@ -41,6 +44,14 @@ log = logging.getLogger(__name__)
 
 def _comment_author(comment: dict) -> str:
     return ((comment.get("user") or {}).get("login") or "").strip().lower()
+
+
+def _issue_author(issue: dict) -> str:
+    return ((issue.get("user") or {}).get("login") or "").strip().lower()
+
+
+def _is_closed(issue: dict) -> bool:
+    return (issue.get("state") or "").strip().lower() == "closed"
 
 
 def _swarmica_link(issue_tickets: dict[str, int], map_key: str | None) -> str | None:
@@ -98,8 +109,9 @@ def _sync_issue_closed(
     issue_tickets: dict[str, int],
     issue_closed_synced: list[str],
     closed_synced_set: set[str],
+    last_client_comment_at: str = "",
 ) -> None:
-    if (issue.get("state") or "").strip().lower() != "closed":
+    if not _is_closed(issue):
         return
 
     number = issue.get("number")
@@ -112,6 +124,18 @@ def _sync_issue_closed(
 
     ticket_id = issue_tickets.get(map_key)
     if ticket_id is None:
+        return
+
+    closed_at = issue.get("closed_at") or ""
+    if closed_at and last_client_comment_at >= closed_at:
+        # Client wrote after the issue was closed: keep the ticket open for the reply.
+        issue_closed_synced.append(map_key)
+        closed_synced_set.add(map_key)
+        log.info(
+            "Swarmica: issue %s closed, but client commented afterwards; ticket %s left open",
+            map_key,
+            ticket_id,
+        )
         return
 
     close_key = f"swarmica:closed:{map_key}"
@@ -138,18 +162,17 @@ def run_once(
     issue_closed_synced: list[str],
 ) -> str:
     """
-    Fetch issues updated since last_poll_at; deliver new events to Telegram and Swarmica.
+    Fetch issues updated since last_poll_at; deliver new events to Swarmica.
 
-    Telegram uses sent_keys; Swarmica uses swarmica_sent_keys and issue_tickets mapping.
+    Swarmica uses swarmica_sent_keys and issue_tickets mapping. sent_keys holds Telegram
+    dedup keys; it is only passed through to state while Telegram is disabled.
     """
     since_dt = datetime.fromisoformat(last_poll_at.replace("Z", "+00:00"))
-    tg_sent_set = set(sent_keys)
+    # Telegram (disabled): tg = TelegramNotifier(sent_keys)
     swarmica_sent_set = set(swarmica_sent_keys)
     closed_synced_set = set(issue_closed_synced)
     swarmica_on = swarmica_client.is_enabled()
 
-    total_issues_tg = 0
-    total_comments_tg = 0
     total_issues_swarmica = 0
     total_comments_swarmica = 0
     repos_checked = 0
@@ -161,8 +184,6 @@ def run_once(
         owner = repo["owner"]["login"]
         name = repo["name"]
         repos_checked += 1
-        issues_tg = 0
-        comments_tg = 0
         issues_swarmica = 0
         comments_swarmica = 0
 
@@ -171,9 +192,14 @@ def run_once(
             for issue in get_repo_issues(owner, name, since_dt):
                 number = issue.get("number")
                 map_key = issue_map_key(full_name, number) if number is not None else None
-                is_new_issue = (issue.get("created_at") or "") >= last_poll_at
 
-                if swarmica_on and map_key is not None:
+                # Issues opened by team members (IGNORE_COMMENT_AUTHORS) get no ticket until
+                # a client comments on them.
+                if (
+                    swarmica_on
+                    and map_key is not None
+                    and _issue_author(issue) not in IGNORE_COMMENT_AUTHORS
+                ):
                     create_key = f"swarmica:issue:{map_key}"
                     if create_key not in swarmica_sent_set:
                         ticket_id = _ensure_swarmica_ticket(
@@ -186,29 +212,13 @@ def run_once(
                         if ticket_id is not None:
                             issues_swarmica += 1
 
-                if is_new_issue and map_key is not None:
-                    tg_key = f"tg:issue:{map_key}"
-                    if tg_key not in tg_sent_set:
-                        text = format_issue(
-                            full_name,
-                            issue,
-                            swarmica_ticket_url=_swarmica_link(issue_tickets, map_key)
-                            if swarmica_on
-                            else None,
-                        )
-                        if send_message(text):
-                            sent_keys.append(tg_key)
-                            tg_sent_set.add(tg_key)
-                            issues_tg += 1
-                            log.info("Telegram: sent issue %s #%s", full_name, number)
-                        else:
-                            log.warning(
-                                "Telegram: issue notification not delivered for %s #%s "
-                                "(will retry on next poll)",
-                                full_name,
-                                number,
-                            )
+                # Telegram (disabled):
+                # if map_key is not None and (issue.get("created_at") or "") >= last_poll_at:
+                #     tg.notify_issue(
+                #         full_name, issue, map_key, _swarmica_link(issue_tickets, map_key)
+                #     )
 
+                last_client_comment_at = ""
                 for comment in get_issue_comments(owner, name, issue["number"]):
                     if (comment.get("created_at") or "") < last_poll_at:
                         continue
@@ -222,24 +232,37 @@ def run_once(
                         continue
 
                     author = _comment_author(comment)
-                    ignored_for_tg = author in IGNORE_COMMENT_AUTHORS
+                    is_team_author = author in IGNORE_COMMENT_AUTHORS
+                    if not is_team_author:
+                        last_client_comment_at = max(
+                            last_client_comment_at, comment.get("created_at") or ""
+                        )
 
                     if swarmica_on and map_key is not None:
                         swarmica_comment_key = f"swarmica:comment:{cid}"
                         if swarmica_comment_key not in swarmica_sent_set:
-                            ticket_id = _ensure_swarmica_ticket(
-                                full_name,
-                                issue,
-                                issue_tickets,
-                                swarmica_sent_keys,
-                                swarmica_sent_set,
-                            )
-                            if ticket_id is not None:
-                                comment_status = (
-                                    SWARMICA_STATUS_PENDING
-                                    if author in IGNORE_COMMENT_AUTHORS
-                                    else SWARMICA_STATUS_OPEN
+                            if is_team_author:
+                                # Team reply: only into an existing ticket, never create one.
+                                ticket_id = issue_tickets.get(map_key)
+                            else:
+                                ticket_id = _ensure_swarmica_ticket(
+                                    full_name,
+                                    issue,
+                                    issue_tickets,
+                                    swarmica_sent_keys,
+                                    swarmica_sent_set,
                                 )
+                            if ticket_id is not None:
+                                # Team reply → waiting for client (or stays solved if the
+                                # issue is closed); client reply → ticket reopened.
+                                if is_team_author:
+                                    comment_status = (
+                                        SWARMICA_STATUS_SOLVED
+                                        if _is_closed(issue)
+                                        else SWARMICA_STATUS_PENDING
+                                    )
+                                else:
+                                    comment_status = SWARMICA_STATUS_OPEN
                                 try:
                                     swarmica_client.add_issue_comment(
                                         ticket_id,
@@ -268,38 +291,14 @@ def run_once(
                                         cid,
                                     )
 
-                    if not ignored_for_tg:
-                        tg_comment_key = f"tg:comment:{cid}"
-                        if tg_comment_key not in tg_sent_set:
-                            text = format_comment(
-                                full_name,
-                                issue,
-                                comment,
-                                swarmica_ticket_url=_swarmica_link(issue_tickets, map_key)
-                                if swarmica_on
-                                else None,
-                            )
-                            if send_message(text):
-                                sent_keys.append(tg_comment_key)
-                                tg_sent_set.add(tg_comment_key)
-                                comments_tg += 1
-                                log.info("Telegram: sent comment %s #%s", full_name, number)
-                            else:
-                                log.warning(
-                                    "Telegram: comment notification not delivered for %s #%s "
-                                    "(comment id=%s; will retry on next poll)",
-                                    full_name,
-                                    number,
-                                    cid,
-                                )
-                    else:
-                        log.info(
-                            "Telegram: skip comment %s on %s #%s (author %s in IGNORE_COMMENT_AUTHORS)",
-                            cid,
-                            full_name,
-                            number,
-                            author or "?",
-                        )
+                    # Telegram (disabled):
+                    # tg.notify_comment(
+                    #     full_name,
+                    #     issue,
+                    #     comment,
+                    #     author_ignored=is_team_author,
+                    #     swarmica_ticket_url=_swarmica_link(issue_tickets, map_key),
+                    # )
 
                 if swarmica_on and map_key is not None:
                     _sync_issue_closed(
@@ -308,19 +307,13 @@ def run_once(
                         issue_tickets,
                         issue_closed_synced,
                         closed_synced_set,
+                        last_client_comment_at,
                     )
 
-            total_issues_tg += issues_tg
-            total_comments_tg += comments_tg
             total_issues_swarmica += issues_swarmica
             total_comments_swarmica += comments_swarmica
 
-            if (
-                issues_tg == 0
-                and comments_tg == 0
-                and issues_swarmica == 0
-                and comments_swarmica == 0
-            ):
+            if issues_swarmica == 0 and comments_swarmica == 0:
                 log.info("GitHub request done for %s: no new issues or comments", full_name)
 
             save(
@@ -340,23 +333,15 @@ def run_once(
     maybe_trim_sent_keys_in_place(swarmica_sent_keys)
     maybe_trim_sent_keys_in_place(issue_closed_synced)
 
-    if (
-        total_issues_tg == 0
-        and total_comments_tg == 0
-        and total_issues_swarmica == 0
-        and total_comments_swarmica == 0
-    ):
+    if total_issues_swarmica == 0 and total_comments_swarmica == 0:
         log.info(
             "Poll complete: %d repo(s) checked, no new issues or comments",
             repos_checked,
         )
     else:
         log.info(
-            "Poll complete: %d repo(s), TG %d issue(s) + %d comment(s), "
-            "Swarmica %d issue(s) + %d comment(s)",
+            "Poll complete: %d repo(s), Swarmica %d issue(s) + %d comment(s)",
             repos_checked,
-            total_issues_tg,
-            total_comments_tg,
             total_issues_swarmica,
             total_comments_swarmica,
         )
@@ -386,14 +371,18 @@ def main() -> None:
     )
     if IGNORE_COMMENT_AUTHORS:
         log.info(
-            "Ignoring GitHub comment authors in Telegram only: %s",
+            "Team GitHub logins (IGNORE_COMMENT_AUTHORS): %s",
             ", ".join(sorted(IGNORE_COMMENT_AUTHORS)),
         )
-    if swarmica_client.is_enabled():
-        log.info("Swarmica integration enabled")
-        swarmica_client.warm_assignee_cache()
-    else:
-        log.info("Swarmica integration disabled (set SWARMICA_API_URL and SWARMICA_API_TOKEN)")
+    if not swarmica_client.is_enabled():
+        log.error(
+            "Swarmica integration is not configured (set SWARMICA_API_URL and "
+            "SWARMICA_API_TOKEN); Telegram is disabled, so there is nothing to deliver to."
+        )
+        sys.exit(1)
+    log.info("Swarmica integration enabled")
+    log.info("Telegram notifications disabled (see bot/telegram/__init__.py)")
+    swarmica_client.warm_assignee_cache()
     if POLL_INTERVAL_CLAMPED:
         log.warning(
             "Specified poll interval is invalid (less than minimum). "

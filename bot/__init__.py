@@ -1,1 +1,1 @@
-# GitHub Issues → Telegram bot
+# GitHub Issues → Swarmica bot (Telegram part disabled, see bot/telegram/)

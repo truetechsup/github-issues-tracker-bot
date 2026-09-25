@@ -4,7 +4,7 @@ import logging
 
 import requests
 
-from bot.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+from bot.telegram.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 
 log = logging.getLogger(__name__)
 

@@ -2,7 +2,7 @@
 
 import re
 
-from bot.config import BODY_PREVIEW_LENGTH
+from bot.telegram.config import BODY_PREVIEW_LENGTH
 
 
 def _truncate_plain(text: str, max_len: int) -> str:

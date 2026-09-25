@@ -21,8 +21,6 @@ MIN_POLL_INTERVAL_SECONDS = 60
 
 GITHUB_NAME = (os.environ.get("GITHUB_NAME") or os.environ.get("GITHUB_ORG") or "").strip()
 GITHUB_TOKEN = (os.environ.get("GITHUB_TOKEN") or "").strip()
-TELEGRAM_BOT_TOKEN = (os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
-TELEGRAM_CHAT_ID = (os.environ.get("TELEGRAM_CHAT_ID") or "").strip()
 
 SWARMICA_API_URL = (os.environ.get("SWARMICA_API_URL") or "").strip().rstrip("/")
 SWARMICA_API_TOKEN = (os.environ.get("SWARMICA_API_TOKEN") or "").strip()
@@ -39,7 +37,7 @@ SWARMICA_STATUS_SOLVED = (os.environ.get("SWARMICA_STATUS_SOLVED") or "SOLVED").
 
 
 def swarmica_ticket_url(ticket_id: int) -> str:
-    """Public URL of a Swarmica ticket for links in Telegram."""
+    """Public URL of a Swarmica ticket (agent UI)."""
     if SWARMICA_TICKET_URL:
         return SWARMICA_TICKET_URL.replace("{id}", str(ticket_id))
     return f"{SWARMICA_API_URL}/tickets/{ticket_id}"
@@ -53,9 +51,9 @@ else:
     POLL_INTERVAL_CLAMPED = False
 
 STATE_PATH = (os.environ.get("STATE_PATH") or "/data/state.json").strip()
-BODY_PREVIEW_LENGTH = _int("BODY_PREVIEW_LENGTH", 300)
 
-# Comma-separated GitHub logins: comments from these users are not sent to Telegram.
+# Comma-separated GitHub logins of the team: their replies set the Swarmica ticket to
+# PENDING (SOLVED if the issue is closed); issues they open get no ticket.
 def _parse_ignore_comment_authors(raw: str | None) -> frozenset[str]:
     if not raw or not raw.strip():
         return frozenset()
@@ -89,15 +87,6 @@ def validate_config() -> list[str]:
             f"GITHUB_NAME '{GITHUB_NAME}' is invalid. "
             "Use only letters, numbers, hyphens; 1–39 characters."
         )
-
-    if not TELEGRAM_BOT_TOKEN:
-        errors.append("TELEGRAM_BOT_TOKEN is empty. Create a bot via @BotFather and set the token.")
-
-    if not TELEGRAM_CHAT_ID:
-        errors.append("TELEGRAM_CHAT_ID is empty. Add the bot to a chat and set the chat ID.")
-
-    if BODY_PREVIEW_LENGTH < 0:
-        errors.append("BODY_PREVIEW_LENGTH must be >= 0.")
 
     if SENT_KEYS_MAX < 100:
         errors.append("SENT_KEYS_MAX must be >= 100.")
